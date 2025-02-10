@@ -7,12 +7,6 @@ public class PersonExample : IExamplesProvider<Person>
 {
     public Person GetExamples()
     {
-        return new Person
-        {
-            Id = 1,
-            Name = "Example Laptop",
-            Email = "bnaya@somewhere.com",
-            SSN = "123-45-6789"
-        };
+        return new Person(1, "Bnaya", "bnaya@somewhere.com", "123-45-6789");
     }
 }

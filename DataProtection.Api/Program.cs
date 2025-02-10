@@ -1,4 +1,8 @@
+using DataProtection.Abstractions;
 using DataProtection.Api.Data_Examples;
+using Microsoft.Extensions.Compliance.Redaction;
+using Microsoft.Extensions.Compliance.Classification;
+using Microsoft.Extensions.Compliance;
 using Swashbuckle.AspNetCore.Filters;
 using System.Text.Json;
 
@@ -11,11 +15,13 @@ services.AddControllers();
 services.AddEndpointsApiExplorer();
 services.AddSwaggerGen(c =>
 {
-    c.ExampleFilters(); 
+    c.ExampleFilters();
 });
 services.AddSwaggerExamplesFromAssemblyOf<PersonExample>();
 
-builder.Logging.ClearProviders()
+var logger = services.AddLogging();
+var logging = builder.Logging;
+logging.ClearProviders()
                .AddJsonConsole(c =>
                {
                    c.TimestampFormat = "[HH:mm:ss] ";
@@ -24,7 +30,19 @@ builder.Logging.ClearProviders()
                    {
                        Indented = true
                    };
-               });
+               })
+               .EnableRedaction();
+
+
+services.AddRedaction(x =>
+{
+    x.SetRedactor<ErasingRedactor>(DataTaxonomy.Sets.Sensitive);
+    x.SetHmacRedactor(m =>
+    {
+        m.Key = Convert.ToBase64String("REPLACE_ME_WITH_REAL_SECRET_FROM_SECRET_MANAGER"u8);
+        m.KeyId = 68;
+    }, DataTaxonomy.Sets.Pii);
+});
 
 var app = builder.Build();
 
