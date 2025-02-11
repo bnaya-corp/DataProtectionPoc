@@ -9,7 +9,7 @@ namespace DataProtection.Api.Controllers;
 [Route("[controller]")]
 public class DemoController : ControllerBase
 {
-    private readonly ConcurrentDictionary<int, Person> _people = new();
+    private static readonly ConcurrentDictionary<int, Person> _people = new();
 
     private readonly ILogger<DemoController> _logger;
 

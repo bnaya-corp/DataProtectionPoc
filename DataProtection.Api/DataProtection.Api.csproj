@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DataProtection.Abstractions\DataProtection.Abstractions.csproj" />
+    <ProjectReference Include="..\DataProtection.Middlewares\DataProtection.Middlewares.csproj" />
   </ItemGroup>
 
 </Project>

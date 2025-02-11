@@ -5,12 +5,17 @@ using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance;
 using Swashbuckle.AspNetCore.Filters;
 using System.Text.Json;
+using DataProtection.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var services = builder.Services;
 
-services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ReductionResponseFilter>(); // Add the response filter globally
+});
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 services.AddEndpointsApiExplorer();
 services.AddSwaggerGen(c =>
