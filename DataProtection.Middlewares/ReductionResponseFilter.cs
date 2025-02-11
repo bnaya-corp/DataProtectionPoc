@@ -2,10 +2,22 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Compliance.Classification;
+using Microsoft.Extensions.Compliance.Redaction;
 using System.Reflection;
+
+
+// TODO: ⚠ support sensitive data within nested objects
 
 public class ReductionResponseFilter : IActionFilter
 {
+    private readonly IRedactorProvider? _redactorProvider;
+
+    public ReductionResponseFilter(IRedactorProvider? redactorProvider)
+    {
+        _redactorProvider = redactorProvider;
+    }
+
     public void OnActionExecuting(ActionExecutingContext context)
     {
         // Do nothing before execution
@@ -13,36 +25,86 @@ public class ReductionResponseFilter : IActionFilter
 
     public void OnActionExecuted(ActionExecutedContext context)
     {
+        if (_redactorProvider == null)
+            return;
+
         if (context.Result is ObjectResult objectResult && objectResult.Value != null)
         {
-            ConvertStringsToUpperCase(objectResult.Value); // Modify response object before serialization
+            objectResult.Value = Reduct(objectResult.Value);
         }
     }
 
-    private void ConvertStringsToUpperCase(object obj)
+    private object Reduct(object obj)
     {
-        if (obj == null) return;
+        if (obj == null) return null;
 
         var type = obj.GetType();
-        if (type.IsPrimitive || obj is string) return;
 
-        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        // If it's a primitive, string, or struct, return as is
+        if (type.IsPrimitive || obj is string || type.IsEnum)
+            return obj is string str ? str.ToUpper() : obj;
+
+        // If it's a record or class, clone it with modified string properties
+        if (type.IsClass || type.IsValueType)
         {
-            if (!prop.CanRead || !prop.CanWrite) continue;
+            object? instance = Activator.CreateInstance(type, true); // Bypass constructor if needed
 
-            if (prop.PropertyType == typeof(string))
+            if (instance == null)
+                throw new ArgumentNullException(type.Name);
+
+            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
             {
-                var value = prop.GetValue(obj) as string;
-                if (!string.IsNullOrEmpty(value))
+                if (!prop.CanRead) continue; // Skip properties without a getter
+
+                var classifications = prop.GetCustomAttributes<DataClassificationAttribute>(true)
+                                          .Select(clsAtt => clsAtt.Classification);
+
+                if (!classifications.Any())
                 {
-                    prop.SetValue(obj, value.ToUpper());
+                    classifications = type.GetConstructors()
+                                .SelectMany(ctor => ctor.GetParameters()
+                                                                     .Where(prm => prm.Name == prop.Name)
+                                                                     .SelectMany(prm => prm.GetCustomAttributes<DataClassificationAttribute>())
+                                                                     .Select(clsAtt => clsAtt.Classification));
+                }
+
+                if (!classifications.Any())
+                    continue; // Check for redaction attribute
+
+                object? value = prop.GetValue(obj);
+                if (value == null)
+                    continue;
+
+                var classificationSets = new DataClassificationSet(classifications);
+                Redactor redactor = _redactorProvider!.GetRedactor(classificationSets);
+                if (redactor == null)
+                    continue;
+
+                value = redactor.Redact(value);
+                WriteProp();
+
+                void WriteProp()
+                {
+                    if (prop.CanWrite)
+                    {
+                        // Writable properties can be set normally
+                        prop.SetValue(instance, value);
+                    }
+                    else
+                    {
+                        // Read-only properties need to be modified using reflection
+                        var field = type.GetField($"<{prop.Name}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+                        if (field != null)
+                        {
+                            field.SetValue(instance, value);
+                        }
+                    }
                 }
             }
-            else if (prop.PropertyType.IsClass)
-            {
-                var nestedObj = prop.GetValue(obj);
-                ConvertStringsToUpperCase(nestedObj); // Recursively process nested objects
-            }
+
+            return instance;
         }
+
+        return obj;
     }
 }
